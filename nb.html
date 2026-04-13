@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>別踩白塊 1984 - Local Debug Ready</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rajdhani:wght@500;700&display=swap');
+        :root { --neon-pink: #ff00ff; --neon-blue: #00ffff; --bg-dark: #0d0221; }
+        body { background-color: var(--bg-dark); color: white; font-family: 'Rajdhani', sans-serif; overflow: hidden; margin: 0; user-select: none; }
+        .pixel-font { font-family: 'Press+Start+2P', cursive; }
+        #game-container { position: relative; width: 100%; max-width: 400px; height: 100vh; margin: 0 auto; background: #000; border-inline: 2px solid var(--neon-blue); overflow: hidden; box-shadow: 0 0 20px var(--neon-blue); }
+        .tile { position: absolute; width: 25%; height: 20%; border: 1px solid rgba(0, 255, 255, 0.05); transition: background 0.1s; }
+        .tile-black { background: linear-gradient(45deg, #ff00ff, #7a00ff); box-shadow: 0 0 15px var(--neon-pink); z-index: 10; }
+        .tile-hit { background: #fff !important; box-shadow: 0 0 30px #fff; }
+        .btn-retro { border: 2px solid var(--neon-pink); color: var(--neon-pink); padding: 10px; font-family: 'Press Start 2P'; font-size: 8px; cursor: pointer; transition: 0.3s; background: transparent; display: block; width: 100%; text-align: center; }
+        .btn-retro:hover { background: var(--neon-pink); color: #000; }
+        .screen-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 500; padding: 20px; }
+        .input-retro { background: rgba(0, 255, 255, 0.05); border: 1px solid var(--neon-blue); color: var(--neon-blue); padding: 10px; width: 100%; margin-bottom: 10px; outline: none; }
+        .lane-flash { position: absolute; top: 0; width: 25%; height: 100%; background: linear-gradient(to top, rgba(0, 255, 255, 0.2), transparent); opacity: 0; pointer-events: none; transition: opacity 0.1s; }
+        .settings-icon { position: absolute; top: 15px; right: 15px; cursor: pointer; color: var(--neon-blue); z-index: 600; }
+        #speed-surge-notice { position: absolute; top: 40%; width: 100%; text-align: center; color: yellow; font-family: 'Press Start 2P'; font-size: 14px; text-shadow: 0 0 10px yellow; z-index: 200; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="speed-surge-notice">SPEED UP!!</div>
+        
+        <!-- UI Elements -->
+        <div id="status-bar" class="absolute top-0 w-full p-4 flex justify-between z-[100] pixel-font text-[8px] hidden">
+            <div id="user-id-display" class="text-cyan-400">GUEST MODE</div>
+            <div id="high-score-display" class="text-pink-500">BEST: 0</div>
+        </div>
+
+        <div id="game-ui" class="absolute top-20 w-full text-center z-50 pointer-events-none hidden">
+            <div id="score" class="pixel-font text-2xl text-pink-500 italic">SCORE: 0</div>
+        </div>
+
+        <div id="tile-layer"></div>
+        <div id="judgment-zone" class="absolute bottom-[10vh] w-full h-[2px] bg-cyan-400 shadow-[0_0_10px_cyan]"></div>
+
+        <!-- Settings Screen -->
+        <div id="settings-screen" class="screen-overlay hidden" style="z-index: 700;">
+            <div class="border-2 border-pink-500 p-8 bg-black w-full max-w-[300px] text-center">
+                <h2 id="settings-title" class="pixel-font text-pink-500 mb-8 text-sm">設定 / SETTINGS</h2>
+                <p id="lang-label" class="text-xs text-cyan-400 mb-2">切換語言 / LANGUAGE</p>
+                <div class="flex gap-2 mb-6">
+                    <button onclick="updateLanguage('zh')" class="btn-retro">繁中</button>
+                    <button onclick="updateLanguage('en')" class="btn-retro">EN</button>
+                </div>
+                <p id="audio-label" class="text-xs text-cyan-400 mb-2">音效音樂 / AUDIO</p>
+                <button id="audio-toggle-btn" onclick="toggleAudio()" class="btn-retro mb-8">ON</button>
+                <button onclick="document.getElementById('settings-screen').classList.add('hidden')" class="btn-retro">CLOSE</button>
+            </div>
+        </div>
+
+        <!-- Login Screen (With Bypass for local use) -->
+        <div id="login-screen" class="screen-overlay">
+            <h1 class="pixel-font text-2xl text-cyan-400 mb-2">NEON TILES</h1>
+            <p class="text-[10px] text-pink-500 mb-8 tracking-widest">LOCAL ACCESS READY</p>
+            <div class="border-2 border-cyan-900 p-6 bg-black/60 w-full max-w-[280px]">
+                <p id="mode-title" class="mb-4 text-xs text-center text-cyan-100 italic">點擊下方按鈕直接進入</p>
+                <input type="text" id="user-email" placeholder="ACCOUNT" class="input-retro">
+                <input type="password" id="user-pass" placeholder="PASSWORD" class="input-retro">
+                <button id="login-btn" onclick="bypassLogin()" class="btn-retro mb-4">進入遊戲 / ACCESS</button>
+                <p class="text-[8px] text-gray-500 text-center">Firebase 未偵測時將自動啟用離線模式</p>
+            </div>
+        </div>
+
+        <!-- Main Menu -->
+        <div id="main-menu" class="screen-overlay hidden">
+            <h2 id="verified-text" class="pixel-font text-cyan-400 mb-8">CONNECTED</h2>
+            <p id="instruction-text" class="mb-12 text-pink-300 text-sm text-center">使用 D F J K 鍵<br>或點擊方塊開始</p>
+            <button id="start-btn" onclick="startGame()" class="btn-retro text-lg mb-4 py-4">啟動 / START</button>
+            <button onclick="document.getElementById('settings-screen').classList.remove('hidden')" class="btn-retro text-[8px] opacity-70">SETTINGS</button>
+            <div id="game-over-ui" class="mt-8 flex flex-col gap-4 items-center hidden">
+                <div id="final-score" class="pixel-font text-sm text-white"></div>
+                <button onclick="shareGame()" class="btn-retro text-cyan-400 border-cyan-400">SHARE LINK</button>
+            </div>
+        </div>
+
+        <div id="countdown-overlay" class="screen-overlay hidden">
+            <div id="countdown-number" class="pixel-font text-6xl text-cyan-400">3</div>
+        </div>
+
+        <!-- Flashes -->
+        <div id="flash-0" class="lane-flash" style="left: 0;"></div>
+        <div id="flash-1" class="lane-flash" style="left: 25%;"></div>
+        <div id="flash-2" class="lane-flash" style="left: 50%;"></div>
+        <div id="flash-3" class="lane-flash" style="left: 75%;"></div>
+    </div>
+
+    <script>
+        // --- 核心狀態 ---
+        window.gameData = {
+            lang: 'zh',
+            audioEnabled: true,
+            highScore: parseInt(localStorage.getItem('neonTiles_highScore')) || 0
+        };
+
+        const translations = {
+            zh: {
+                score: "分數", best: "最高", final: "最終得分", 
+                start: "啟動", settings: "設定", close: "關閉",
+                audio: "音效音樂", on: "開啟", off: "關閉",
+                copied: "已複製網址！"
+            },
+            en: {
+                score: "SCORE", best: "BEST", final: "FINAL",
+                start: "START", settings: "SETTINGS", close: "CLOSE",
+                audio: "AUDIO", on: "ON", off: "OFF",
+                copied: "URL COPIED!"
+            }
+        };
+
+        function updateLanguage(lang) {
+            window.gameData.lang = lang;
+            const t = translations[lang];
+            document.getElementById('score').innerText = `${t.score}: 0`;
+            document.getElementById('high-score-display').innerText = `${t.best}: ${window.gameData.highScore}`;
+            document.getElementById('audio-toggle-btn').innerText = window.gameData.audioEnabled ? t.on : t.off;
+        }
+
+        // --- 音訊系統 ---
+        let audioCtx = null;
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playSound(freq, type = 'sine', duration = 0.1, vol = 0.05) {
+            if (!window.gameData.audioEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            g.gain.setValueAtTime(vol, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        }
+
+        // --- 登入繞過 ---
+        function bypassLogin() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('main-menu').classList.remove('hidden');
+            document.getElementById('status-bar').classList.remove('hidden');
+            updateLanguage('zh');
+        }
+
+        // --- 遊戲邏輯 ---
+        let score = 0, speed = 4, gameActive = false, tiles = [], animId = null;
+        const thresholds = [100, 1000, 5000];
+
+        function createRow(y) {
+            const lane = Math.floor(Math.random() * 4);
+            const els = [];
+            for(let i=0; i<4; i++) {
+                const div = document.createElement('div');
+                div.className = 'tile' + (i === lane ? ' tile-black' : '');
+                div.style.left = (i*25) + '%';
+                div.style.top = y + 'px';
+                div.onmousedown = () => handleHit(i);
+                document.getElementById('tile-layer').appendChild(div);
+                els.push(div);
+            }
+            return { els, y, lane, clicked: false };
+        }
+
+        function handleHit(lane) {
+            if (!gameActive) return;
+            const row = tiles.find(r => r.lane === lane && !r.clicked && r.y > -100);
+            document.getElementById(`flash-${lane}`).style.opacity = "1";
+            setTimeout(() => document.getElementById(`flash-${lane}`).style.opacity = "0", 100);
+
+            if (row) {
+                row.clicked = true;
+                row.els[lane].classList.remove('tile-black');
+                row.els[lane].classList.add('tile-hit');
+                score++;
+                if (thresholds.includes(score)) {
+                    speed += 1.5;
+                    document.getElementById('speed-surge-notice').style.opacity = 1;
+                    setTimeout(() => document.getElementById('speed-surge-notice').style.opacity = 0, 800);
+                } else { speed += 0.01; }
+                const t = translations[window.gameData.lang];
+                document.getElementById('score').innerText = `${t.score}: ${score}`;
+                playSound(440 + lane*100);
+            } else {
+                endGame();
+            }
+        }
+
+        function endGame() {
+            gameActive = false;
+            cancelAnimationFrame(animId);
+            playSound(100, 'sawtooth', 0.5, 0.1);
+            if (score > window.gameData.highScore) {
+                window.gameData.highScore = score;
+                localStorage.setItem('neonTiles_highScore', score);
+            }
+            document.getElementById('main-menu').classList.remove('hidden');
+            document.getElementById('game-over-ui').classList.remove('hidden');
+            const t = translations[window.gameData.lang];
+            document.getElementById('final-score').innerText = `${t.final}: ${score}`;
+            updateLanguage(window.gameData.lang);
+        }
+
+        function gameLoop() {
+            if (!gameActive) return;
+            for (let i = tiles.length - 1; i >= 0; i--) {
+                const r = tiles[i];
+                r.y += speed;
+                r.els.forEach(e => e.style.top = r.y + 'px');
+                if (r.y > window.innerHeight * 0.9 && !r.clicked) { endGame(); return; }
+                if (r.y > window.innerHeight) { r.els.forEach(e => e.remove()); tiles.splice(i,1); }
+            }
+            if (tiles.length === 0 || tiles[tiles.length-1].y > 0) {
+                tiles.push(createRow(tiles.length === 0 ? -200 : tiles[tiles.length-1].y - window.innerHeight*0.2));
+            }
+            animId = requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            initAudio();
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('game-ui').classList.remove('hidden');
+            document.getElementById('countdown-overlay').classList.remove('hidden');
+            let count = 3;
+            const timer = setInterval(() => {
+                document.getElementById('countdown-number').innerText = count;
+                if(count > 0) playSound(600);
+                if(count <= 0) {
+                    clearInterval(timer);
+                    document.getElementById('countdown-overlay').classList.add('hidden');
+                    score = 0; speed = 4; tiles = [];
+                    document.getElementById('tile-layer').innerHTML = '';
+                    gameActive = true;
+                    gameLoop();
+                }
+                count--;
+            }, 800);
+        }
+
+        window.addEventListener('keydown', (e) => {
+            const keys = {'d':0, 'f':1, 'j':2, 'k':3};
+            if(keys.hasOwnProperty(e.key.toLowerCase())) handleHit(keys[e.key.toLowerCase()]);
+        });
+
+        function shareGame() {
+            const dummy = document.createElement('input');
+            document.body.appendChild(dummy);
+            dummy.value = window.location.href;
+            dummy.select();
+            document.execCommand('copy');
+            document.body.removeChild(dummy);
+            alert(translations[window.gameData.lang].copied);
+        }
+
+        function toggleAudio() {
+            window.gameData.audioEnabled = !window.gameData.audioEnabled;
+            updateLanguage(window.gameData.lang);
+        }
+    </script>
+</body>
+</html>
